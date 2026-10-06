@@ -1,13 +1,20 @@
 # .NET
 backend/**/bin/
 backend/**/obj/
+
+# database
 backend/**/*.db
 backend/**/*.db-shm
 backend/**/*.db-wal
 
+# Java
+target/
+
 # Node
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
+frontend/npm-debug.log*
 
 # IDE
 .idea/
@@ -20,3 +27,6 @@ Thumbs.db
 
 # other
 c-sharp
+no-merge/
+
+
