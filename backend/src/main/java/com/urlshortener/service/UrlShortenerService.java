@@ -1,47 +1,65 @@
 package com.urlshortener.service;
 
+import com.urlshortener.exception.AliasGenerationException;
 import com.urlshortener.model.ShortenUrlRequest;
 import com.urlshortener.model.ShortenUrlResponse;
 import com.urlshortener.model.UrlListItem;
 import com.urlshortener.repository.ShortenedUrlRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.stream.Collectors;
+
 
 @Service
 public class UrlShortenerService {
-
-    private static final String ALIAS_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final int GENERATED_ALIAS_LENGTH = 7;
-
+    private static final Logger log = LoggerFactory.getLogger(UrlShortenerService.class);
+    static final int MAX_ALIAS_ATTEMPTS = 5;
     private final ShortenedUrlRepository repository;
+    private final AliasGenerator aliasGenerator;
 
-    public UrlShortenerService(ShortenedUrlRepository repository) {
+    public UrlShortenerService(ShortenedUrlRepository repository, AliasGenerator aliasGenerator) {
         this.repository = repository;
+        this.aliasGenerator = aliasGenerator;
     }
 
     public ShortenUrlResponse shorten(ShortenUrlRequest request, String baseUrl) {
         var fullUrl = normalizeUrl(request.getFullUrl());
-        var alias = request.getCustomAlias() == null || request.getCustomAlias().isBlank()
-                ? generateAlias()
-                : request.getCustomAlias().trim();
+        var customAlias = request.getCustomAlias();
+        var alias = customAlias == null || customAlias.isBlank()
+                ? saveWithGeneratedAlias(fullUrl)
+                : saveWithCustomAlias(customAlias.trim(), fullUrl);
 
+        return new ShortenUrlResponse(baseUrl + "/" + alias, alias, fullUrl);
+    }
+
+    private String saveWithCustomAlias(String alias, String fullUrl) {
         if (!isValidAlias(alias)) {
             throw new IllegalArgumentException("Alias may only contain letters, numbers, and hyphens (2–64 characters).");
         }
 
-        if (repository.existsByAlias(alias)) {
+        // Atomic: the UNIQUE constraint decides, so two concurrent requests can never both claim
+        // the alias, and the loser gets a clean "taken" error rather than a 500.
+        if (!repository.saveIfAliasAvailable(alias, fullUrl, Instant.now())) {
             throw new IllegalStateException("The alias '" + alias + "' is already taken.");
         }
+        return alias;
+    }
 
-        repository.save(alias, fullUrl, Instant.now());
-
-        return new ShortenUrlResponse(baseUrl + "/" + alias, alias, fullUrl);
+    private String saveWithGeneratedAlias(String fullUrl) {
+        for (int attempt = 1; attempt <= MAX_ALIAS_ATTEMPTS; attempt++) {
+            var alias = aliasGenerator.generate();
+            if (repository.saveIfAliasAvailable(alias, fullUrl, Instant.now())) {
+                return alias;
+            }
+            // Frequent warnings here mean the alias space is getting crowded: increase the length.
+            log.warn("Generated alias collided with an existing one (attempt {} of {})", attempt, MAX_ALIAS_ATTEMPTS);
+        }
+        throw new AliasGenerationException(MAX_ALIAS_ATTEMPTS);
     }
 
     public String getFullUrl(String alias) {
@@ -62,11 +80,6 @@ public class UrlShortenerService {
         repository.save(alias + "-deleted", fullUrl, Instant.now());
         repository.deleteByAlias(alias + "-deleted");
         return true;
-    }
-
-    private static String generateAlias() {
-        // TODO: Implement alias generation.
-        return "";
     }
 
     private static boolean isValidAlias(String alias) {

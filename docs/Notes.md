@@ -54,3 +54,13 @@ In this iteration, nginx is part of the frontend  - For a more production ready 
 
 ### Tests and Folder architecture
 Added jacoco and failsafe, and standardised test classes names and location - Moved the test classes without code changes for clarity of intent.
+Note that for full testingwe need torun mvn verify (AS mvn test would run only the fast tests and skip the IT tests)
+
+### alias generator and Url shortener format
+the random geneated shortener will be alphanumeric characters only, for simplicity - as some site would not allow consecutive minus characters or non alphanumeric atthe start or theend.
+the usuer generated alias will allow for hyphen (minus) character as well
+We make the alias generator a component - this enforces separation of concerns and allow simpler testing. 
+The method generateAlias in the service class cannot be static: it would prevent replacing with tesrt code - also we want to generate and save in the db in one transactional go. 
+The redirect call returns 302 instead of 301 (or 308) because in this app it is possible to delete an alias, so we dont want the redirect to be cached by a browser
+
+

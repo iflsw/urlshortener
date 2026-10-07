@@ -43,6 +43,22 @@ public class ShortenedUrlRepository {
                 alias, fullUrl, createdAt.toString());
     }
 
+    /**
+     * Inserts the mapping only if the alias is not already taken.
+     * <p>
+     * Atomic: the UNIQUE constraint decides, so two concurrent requests can never
+     * both claim the same alias. Only an alias conflict is ignored; any other
+     * constraint violation still throws.
+     *
+     * @return true if the row was inserted, false if the alias already exists
+     */
+    public boolean saveIfAliasAvailable(String alias, String fullUrl, Instant createdAt) {
+        var rows = jdbc.update("INSERT INTO shortened_urls (alias, full_url, created_at) VALUES (?, ?, ?) "
+                        + "ON CONFLICT(alias) DO NOTHING",
+                alias, fullUrl, createdAt.toString());
+        return rows == 1;
+    }
+
     public Optional<String> findFullUrlByAlias(String alias) {
         var results = jdbc.query("SELECT full_url FROM shortened_urls WHERE alias = ? LIMIT 1",
                 (rs, rowNum) -> rs.getString("full_url"),
