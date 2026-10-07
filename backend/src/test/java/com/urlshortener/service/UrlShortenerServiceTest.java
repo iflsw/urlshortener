@@ -1,9 +1,8 @@
-package com.urlshortener;
+package com.urlshortener.service;
 
 import com.urlshortener.model.ShortenUrlRequest;
 import com.urlshortener.model.ShortenUrlResponse;
 import com.urlshortener.repository.ShortenedUrlRepository;
-import com.urlshortener.service.UrlShortenerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class UrlShortenerServiceTests {
+public class UrlShortenerServiceTest {
 
     private static final String BASE_URL = "http://localhost:8080";
     private UrlShortenerService service;

@@ -3,6 +3,7 @@ backend/**/bin/
 backend/**/obj/
 
 # database
+*.db
 backend/**/*.db
 backend/**/*.db-shm
 backend/**/*.db-wal

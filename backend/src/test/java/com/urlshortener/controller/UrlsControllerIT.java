@@ -1,4 +1,4 @@
-package com.urlshortener;
+package com.urlshortener.controller;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,7 @@ import static org.springframework.http.HttpStatus.PERMANENT_REDIRECT;
         "spring.datasource.url=jdbc:sqlite::memory:",
         "spring.datasource.driver-class-name=org.sqlite.JDBC"
 })
-class UrlsControllerIntegrationTests {
+class UrlsControllerIT {
 
     @Autowired
     private TestRestTemplate restTemplate;

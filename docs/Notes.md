@@ -41,8 +41,16 @@ Persistence: run docker compose down && docker compose up -d, and the seeded row
 
 
 ## design decisions
+### OPenAI/Swagger
+We add swagger early, because it helps - we only need in th ebackedn, so we add it to port 8080 only, not available from frontend.
+http://localhost:8080/swagger-ui/index.html
+
+
 ### Database
 In this iteration, the database is part of the backend - For a more production ready db, it should be a separate container.
 
 ### nginx 
 In this iteration, nginx is part of the frontend  - For a more production ready solution, consider a separate container. 
+
+### Tests and Folder architecture
+Added jacoco and failsafe, and standardised test classes names and location - Moved the test classes without code changes for clarity of intent.
