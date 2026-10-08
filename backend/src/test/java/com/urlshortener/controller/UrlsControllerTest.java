@@ -2,6 +2,8 @@ package com.urlshortener.controller;
 
 import com.urlshortener.model.ShortenUrlRequest;
 import com.urlshortener.model.ShortenUrlResponse;
+import com.urlshortener.model.UrlListItem;
+import com.urlshortener.model.UrlPage;
 import com.urlshortener.service.UrlShortenerService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -11,13 +13,17 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -130,5 +136,59 @@ class UrlsControllerTest {
 
         mockMvc.perform(delete("/missing"))
                 .andExpect(status().isNotFound());
+    }
+
+    // ---- GET /urls (cursor paging) ----
+
+    @Test
+    void list_NoParameters_UsesDefaultSizeAndReturnsEnvelope() throws Exception {
+        given(service.getPage(BASE_URL, null, 20)).willReturn(new UrlPage(
+                List.of(new UrlListItem("abc1234", "https://example.com/", BASE_URL + "/abc1234")),
+                "next-cursor"));
+
+        mockMvc.perform(get("/urls"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].alias").value("abc1234"))
+                .andExpect(jsonPath("$.items[0].fullUrl").value("https://example.com/"))
+                .andExpect(jsonPath("$.items[0].shortUrl").value(BASE_URL + "/abc1234"))
+                .andExpect(jsonPath("$.nextCursor").value("next-cursor"));
+    }
+
+    @Test
+    void list_PassesCursorAndSizeToService() throws Exception {
+        given(service.getPage(BASE_URL, "abc", 5)).willReturn(new UrlPage(List.of(), null));
+
+        mockMvc.perform(get("/urls").param("cursor", "abc").param("size", "5"))
+                .andExpect(status().isOk());
+
+        verify(service).getPage(BASE_URL, "abc", 5);
+    }
+
+    @Test
+    void list_LastPage_NextCursorIsNull() throws Exception {
+        given(service.getPage(BASE_URL, null, 20)).willReturn(new UrlPage(List.of(), null));
+
+        mockMvc.perform(get("/urls"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.nextCursor").value(nullValue()));
+    }
+
+    @Test
+    void list_NonNumericSize_Returns400WithErrorAndSkipsService() throws Exception {
+        mockMvc.perform(get("/urls").param("size", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Invalid value for parameter 'size'."));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void list_ServiceRejectsInput_Returns400WithError() throws Exception {
+        given(service.getPage(BASE_URL, "bad", 20)).willThrow(new IllegalArgumentException("Invalid cursor."));
+
+        mockMvc.perform(get("/urls").param("cursor", "bad"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Invalid cursor."));
     }
 }

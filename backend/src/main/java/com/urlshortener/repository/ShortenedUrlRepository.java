@@ -1,6 +1,7 @@
 package com.urlshortener.repository;
 
 import com.urlshortener.model.UrlListItem;
+import com.urlshortener.model.UrlPage;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -37,6 +38,9 @@ public class ShortenedUrlRepository {
                 + "full_url TEXT NOT NULL, "
                 + "created_at TEXT NOT NULL"
                 + ")");
+        // Supports the newest-first ordering and the cursor condition in findPage.
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_shortened_urls_created_at_id "
+                + "ON shortened_urls (created_at, id)");
     }
 
     /**
@@ -63,12 +67,35 @@ public class ShortenedUrlRepository {
     }
 
     /**
-     * All mappings, newest first. id breaks ties between identical timestamps
-     * (it is AUTOINCREMENT, so it follows insertion order).
+     * One page of URLs, newest first, starting after the given cursor (or from the newest when null).
+     * <p>
+     * Keyset ("cursor") paging: the condition selects rows strictly older than the cursor's
+     * (created_at, id), so rows created or deleted between requests never cause duplicates or gaps.
+     * Ties on created_at are broken by id (AUTOINCREMENT, so insertion order).
+     * Fetches one extra row to detect whether another page exists, without a COUNT query.
      */
-    public List<UrlListItem> findAll(String baseUrl) {
-        return jdbc.query("SELECT alias, full_url FROM shortened_urls ORDER BY created_at DESC, id DESC",
-                urlListItemMapper(baseUrl));
+    public UrlPage findPage(String baseUrl, PageCursor after, int size) {
+        List<PageRow> rows = after == null
+                ? jdbc.query("SELECT id, alias, full_url, created_at FROM shortened_urls "
+                                + "ORDER BY created_at DESC, id DESC LIMIT ?",
+                        PAGE_ROW_MAPPER, size + 1)
+                // Equivalent to (created_at, id) < (?, ?); written out so it is portable across databases.
+                : jdbc.query("SELECT id, alias, full_url, created_at FROM shortened_urls "
+                                + "WHERE created_at < ? OR (created_at = ? AND id < ?) "
+                                + "ORDER BY created_at DESC, id DESC LIMIT ?",
+                        PAGE_ROW_MAPPER, after.createdAt(), after.createdAt(), after.id(), size + 1);
+
+        var hasNextPage = rows.size() > size;
+        var pageRows = hasNextPage ? rows.subList(0, size) : rows;
+        var items = pageRows.stream()
+                .map(row -> new UrlListItem(row.alias(), row.fullUrl(), baseUrl + "/" + row.alias()))
+                .toList();
+        String nextCursor = null;
+        if (hasNextPage) {
+            var last = pageRows.get(pageRows.size() - 1);
+            nextCursor = new PageCursor(last.createdAt(), last.id()).encode();
+        }
+        return new UrlPage(items, nextCursor);
     }
 
     public boolean deleteByAlias(String alias) {
@@ -76,11 +103,12 @@ public class ShortenedUrlRepository {
         return rows > 0;
     }
 
-    private RowMapper<UrlListItem> urlListItemMapper(String baseUrl) {
-        return (ResultSet rs, int rowNum) -> new UrlListItem(
-                rs.getString("alias"),
-                rs.getString("full_url"),
-                baseUrl + "/" + rs.getString("alias")
-        );
+    private record PageRow(long id, String alias, String fullUrl, String createdAt) {
     }
+
+    private static final RowMapper<PageRow> PAGE_ROW_MAPPER = (ResultSet rs, int rowNum) -> new PageRow(
+            rs.getLong("id"),
+            rs.getString("alias"),
+            rs.getString("full_url"),
+            rs.getString("created_at"));
 }

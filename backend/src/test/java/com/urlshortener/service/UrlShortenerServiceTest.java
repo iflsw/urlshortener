@@ -125,7 +125,7 @@ public class UrlShortenerServiceTest {
         service.shorten(request("https://example.com", "gone"), BASE_URL);
         service.delete("gone");
 
-        assertTrue(service.getAll(BASE_URL).isEmpty());
+        assertTrue(service.getPage(BASE_URL, null, 100).items().isEmpty());
     }
 
     @Test
@@ -185,7 +185,7 @@ public class UrlShortenerServiceTest {
                 () -> service.shorten(request("https://example.com", alias), BASE_URL));
 
         assertEquals(INVALID_ALIAS_MESSAGE, ex.getMessage());
-        assertTrue(service.getAll(BASE_URL).isEmpty());
+        assertTrue(service.getPage(BASE_URL, null, 100).items().isEmpty());
     }
 
     @Test
@@ -203,7 +203,52 @@ public class UrlShortenerServiceTest {
                 () -> service.shorten(request("https://example.com", alias), BASE_URL));
 
         assertEquals("The alias '" + alias + "' is reserved.", ex.getMessage());
-        assertTrue(service.getAll(BASE_URL).isEmpty());
+        assertTrue(service.getPage(BASE_URL, null, 100).items().isEmpty());
+    }
+
+    // ---- paging ----
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1, 101})
+    void getPage_SizeOutOfRange_Throws(int size) {
+        var ex = assertThrows(IllegalArgumentException.class, () -> service.getPage(BASE_URL, null, size));
+
+        assertEquals("size must be between 1 and 100.", ex.getMessage());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 100})
+    void getPage_SizeAtBounds_IsAccepted(int size) {
+        service.shorten(request("https://example.com", "abc"), BASE_URL);
+
+        assertEquals(1, service.getPage(BASE_URL, null, size).items().size());
+    }
+
+    @Test
+    void getPage_MalformedCursor_Throws() {
+        var ex = assertThrows(IllegalArgumentException.class, () -> service.getPage(BASE_URL, "!!!", 20));
+
+        assertEquals("Invalid cursor.", ex.getMessage());
+    }
+
+    @Test
+    void getPage_BlankCursor_ReturnsFirstPage() {
+        service.shorten(request("https://example.com", "abc"), BASE_URL);
+
+        assertEquals("abc", service.getPage(BASE_URL, "  ", 20).items().get(0).getAlias());
+    }
+
+    @Test
+    void getPage_FollowingNextCursor_ReturnsTheRest() {
+        service.shorten(request("https://one.com", "one"), BASE_URL);
+        service.shorten(request("https://two.com", "two"), BASE_URL);
+
+        var first = service.getPage(BASE_URL, null, 1);
+        var second = service.getPage(BASE_URL, first.nextCursor(), 1);
+
+        assertEquals("two", first.items().get(0).getAlias());
+        assertEquals("one", second.items().get(0).getAlias());
+        assertNull(second.nextCursor());
     }
 
     private static ShortenUrlRequest request(String fullUrl, String customAlias) {

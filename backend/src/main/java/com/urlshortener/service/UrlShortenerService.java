@@ -3,7 +3,8 @@ package com.urlshortener.service;
 import com.urlshortener.exception.AliasGenerationException;
 import com.urlshortener.model.ShortenUrlRequest;
 import com.urlshortener.model.ShortenUrlResponse;
-import com.urlshortener.model.UrlListItem;
+import com.urlshortener.model.UrlPage;
+import com.urlshortener.repository.PageCursor;
 import com.urlshortener.repository.ShortenedUrlRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +13,6 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Instant;
-import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 public class UrlShortenerService {
     private static final Logger log = LoggerFactory.getLogger(UrlShortenerService.class);
     static final int MAX_ALIAS_ATTEMPTS = 5;
+    static final int MAX_PAGE_SIZE = 100;
 
     /**
      * ASCII letters, digits and hyphens only, 2-64 characters. Deliberately not Character.isLetterOrDigit, which accepts any
@@ -81,8 +82,19 @@ public class UrlShortenerService {
         return repository.findFullUrlByAlias(alias).orElse(null);
     }
 
-    public List<UrlListItem> getAll(String baseUrl) {
-        return repository.findAll(baseUrl);
+    /**
+     * One page of URLs, newest first.
+     *
+     * @param cursor the nextCursor from the previous page, or null/blank for the first page
+     * @param size   number of items per page, 1 to {@value #MAX_PAGE_SIZE}
+     * @throws IllegalArgumentException if size is out of range or the cursor is malformed
+     */
+    public UrlPage getPage(String baseUrl, String cursor, int size) {
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException("size must be between 1 and " + MAX_PAGE_SIZE + ".");
+        }
+        var after = (cursor == null || cursor.isBlank()) ? null : PageCursor.decode(cursor.trim());
+        return repository.findPage(baseUrl, after, size);
     }
 
     /**

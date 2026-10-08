@@ -6,12 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -46,7 +47,8 @@ class UrlsControllerIT {
                 "INSERT INTO shortened_urls (alias, full_url, created_at) VALUES (?, ?, ?)",
                 "redir",
                 "https://target.com/",
-                Instant.now().toString()
+                // Fixed and older than anything the tests create, so list ordering is deterministic.
+                "2020-01-01T00:00:00.000Z"
         );
     }
 
@@ -118,8 +120,7 @@ class UrlsControllerIT {
     void delete_ExistingAlias_RemovesItFromTheList() {
         delete("redir");
 
-        var list = restTemplate.getForEntity("/urls", List.class);
-        assertThat(list.getBody()).isEmpty();
+        assertThat(aliases(getPage(null, 20))).isEmpty();
     }
 
     @Test
@@ -144,5 +145,85 @@ class UrlsControllerIT {
 
         assertThat(response.getStatusCode()).isEqualTo(BAD_REQUEST);
         assertThat(response.getBody()).containsKey("error");
+    }
+
+    // ---- GET /urls (cursor paging) ----
+
+    @Test
+    void list_WalkingAllPages_ReturnsEveryUrlOnceNewestFirst() {
+        create("p1");
+        create("p2");
+        create("p3");
+        create("p4");
+
+        assertThat(walkAll(2)).containsExactly("p4", "p3", "p2", "p1", "redir");
+    }
+
+    @Test
+    void list_UrlCreatedMidWalk_CausesNoDuplicatesOrGaps() {
+        create("p1");
+        create("p2");
+        create("p3");
+        var first = getPage(null, 2);
+
+        create("p4");   // newer than everything: must not appear on later pages or shift them
+        var second = getPage((String) first.get("nextCursor"), 2);
+        var third = getPage((String) second.get("nextCursor"), 2);
+
+        assertThat(aliases(first)).containsExactly("p3", "p2");
+        assertThat(aliases(second)).containsExactly("p1", "redir");
+        assertThat(aliases(third)).isEmpty();
+        assertThat(third.get("nextCursor")).isNull();
+    }
+
+    @Test
+    void list_SizeOutOfRange_Returns400WithError() {
+        var response = restTemplate.getForEntity("/urls?size=0", Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(BAD_REQUEST);
+        assertThat(response.getBody()).containsKey("error");
+    }
+
+    @Test
+    void list_MalformedCursor_Returns400WithError() {
+        var response = restTemplate.getForEntity("/urls?cursor=not-a-cursor", Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(BAD_REQUEST);
+        assertThat(response.getBody()).containsKey("error");
+    }
+
+    private void create(String alias) {
+        var response = restTemplate.postForEntity("/shorten",
+                Map.of("fullUrl", "https://example.com/" + alias, "customAlias", alias), Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(CREATED);
+    }
+
+    private Map<String, Object> getPage(String cursor, int size) {
+        var url = cursor == null ? "/urls?size=" + size : "/urls?size=" + size + "&cursor=" + cursor;
+        var response = restTemplate.exchange(url, HttpMethod.GET, null,
+                new ParameterizedTypeReference<Map<String, Object>>() {});
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        return response.getBody();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> aliases(Map<String, Object> page) {
+        return ((List<Map<String, Object>>) page.get("items")).stream()
+                .map(item -> (String) item.get("alias"))
+                .toList();
+    }
+
+    private List<String> walkAll(int size) {
+        var all = new ArrayList<String>();
+        String cursor = null;
+        for (int pages = 0; pages < 100; pages++) {
+            var page = getPage(cursor, size);
+            all.addAll(aliases(page));
+            cursor = (String) page.get("nextCursor");
+            if (cursor == null) {
+                return all;
+            }
+        }
+        throw new AssertionError("Paging did not terminate");
     }
 }
