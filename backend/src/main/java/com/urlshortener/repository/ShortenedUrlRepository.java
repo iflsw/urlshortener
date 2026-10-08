@@ -8,11 +8,20 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public class ShortenedUrlRepository {
+
+    /**
+     * Fixed-width UTC timestamps (always millisecond precision), so created_at sorts correctly as text.
+     * Instant.toString() drops zero fractions ("...:00Z" vs "...:00.123Z"), which breaks text ordering.
+     */
+    static final DateTimeFormatter CREATED_AT_FORMAT =
+            DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
 
     private final JdbcTemplate jdbc;
 
@@ -42,7 +51,7 @@ public class ShortenedUrlRepository {
     public boolean saveIfAliasAvailable(String alias, String fullUrl, Instant createdAt) {
         var rows = jdbc.update("INSERT INTO shortened_urls (alias, full_url, created_at) VALUES (?, ?, ?) "
                         + "ON CONFLICT(alias) DO NOTHING",
-                alias, fullUrl, createdAt.toString());
+                alias, fullUrl, CREATED_AT_FORMAT.format(createdAt));
         return rows == 1;
     }
 
@@ -53,8 +62,12 @@ public class ShortenedUrlRepository {
         return results.stream().findFirst();
     }
 
+    /**
+     * All mappings, newest first. id breaks ties between identical timestamps
+     * (it is AUTOINCREMENT, so it follows insertion order).
+     */
     public List<UrlListItem> findAll(String baseUrl) {
-        return jdbc.query("SELECT alias, full_url FROM shortened_urls",
+        return jdbc.query("SELECT alias, full_url FROM shortened_urls ORDER BY created_at DESC, id DESC",
                 urlListItemMapper(baseUrl));
     }
 

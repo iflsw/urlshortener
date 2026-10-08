@@ -81,4 +81,5 @@ Deletion - Deletion is permanent (hard delete). A deleted alias can be created a
 - The regitry could be cached. 
 - consider adding @transactional to service methods if we have more than one sql operation eg if we want to make the delete more clever. 
 
-
+### Sort
+- use a normalised timestamp to the millisecond -  use incremental id in case of conflict
