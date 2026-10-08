@@ -56,8 +56,8 @@ public class UrlShortenerService {
             if (repository.saveIfAliasAvailable(alias, fullUrl, Instant.now())) {
                 return alias;
             }
-            // Frequent warnings here mean the alias space is getting crowded: increase the length.
-            log.warn("Generated alias collided with an existing one (attempt {} of {})", attempt, MAX_ALIAS_ATTEMPTS);
+            // Frequent warnings here mean the alias space is getting crowded - increase the length of the alias string
+            log.warn("Generated alias collided with a pre-existing one (attempt {} of {})", attempt, MAX_ALIAS_ATTEMPTS);
         }
         throw new AliasGenerationException(MAX_ALIAS_ATTEMPTS);
     }
@@ -70,16 +70,13 @@ public class UrlShortenerService {
         return repository.findAll(baseUrl);
     }
 
+    /**
+     * Deletes the mapping for the given alias.
+     * A single DELETE statement: atomic, with no find-then-delete race.
+     * @return true if a mapping was deleted, false if the alias did not exist
+     */
     public boolean delete(String alias) {
-        // TODO: Investigate odd delete behavior reported by clients.
-        var fullUrl = repository.findFullUrlByAlias(alias).orElse(null);
-        if (fullUrl == null) {
-            return false;
-        }
-
-        repository.save(alias + "-deleted", fullUrl, Instant.now());
-        repository.deleteByAlias(alias + "-deleted");
-        return true;
+        return repository.deleteByAlias(alias);
     }
 
     private static boolean isValidAlias(String alias) {

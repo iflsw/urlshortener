@@ -83,9 +83,8 @@ public class UrlShortenerServiceTest {
 
     @Test
     void shorten_CustomAliasClaimedConcurrently_ThrowsAliasTaken() {
-        // Simulates losing the race: the alias is free when checked,
-        // but another request inserts it first, so the atomic insert reports a conflict.
-        // (Mockito's default for existsByAlias is false, i.e. "looked free".)
+        // Simulates losing the race: another request inserts the alias first,
+        // so the atomic insert reports a conflict.
         var repository = mock(ShortenedUrlRepository.class);
         given(repository.saveIfAliasAvailable(eq("promo"), anyString(), any())).willReturn(false);
         var racingService = new UrlShortenerService(repository, generator);
@@ -105,6 +104,49 @@ public class UrlShortenerServiceTest {
 
         assertEquals("The alias 'promo' is already taken.", ex.getMessage());
         assertEquals("https://first.com/", service.getFullUrl("promo"));
+    }
+
+    // ---- delete ----
+
+    @Test
+    void delete_ExistingAlias_ReturnsTrueAndRemovesMapping() {
+        service.shorten(request("https://example.com", "gone"), BASE_URL);
+
+        assertTrue(service.delete("gone"));
+        assertNull(service.getFullUrl("gone"));
+    }
+
+    @Test
+    void delete_ExistingAlias_LeavesNoRowsBehind() {
+        // Guards against the old bug, which inserted and deleted an "<alias>-deleted" row
+        // and never touched the original.
+        service.shorten(request("https://example.com", "gone"), BASE_URL);
+        service.delete("gone");
+
+        assertTrue(service.getAll(BASE_URL).isEmpty());
+    }
+
+    @Test
+    void delete_UnknownAlias_ReturnsFalse() {
+        assertFalse(service.delete("missing"));
+    }
+
+    @Test
+    void delete_Twice_SecondCallReturnsFalse() {
+        service.shorten(request("https://example.com", "gone"), BASE_URL);
+
+        assertTrue(service.delete("gone"));
+        assertFalse(service.delete("gone"));
+    }
+
+    @Test
+    void delete_OnlyRemovesTheGivenAlias() {
+        service.shorten(request("https://example.com", "gone"), BASE_URL);
+        service.shorten(request("https://other.com", "kept"), BASE_URL);
+
+        service.delete("gone");
+
+        assertEquals("https://other.com/", service.getFullUrl("kept"));
     }
 
     private static ShortenUrlRequest request(String fullUrl, String customAlias) {

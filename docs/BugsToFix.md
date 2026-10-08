@@ -3,6 +3,8 @@
 # FIXED
 [OPT] Remove the committed backend/target/ folder and fix .gitignore, which still has .NET leftovers (bin/, obj/, c-sharp) and is missing target/.
 done
+[REQ] Delete bug. delete() inserts alias-deleted and then deletes that row. The original is never removed, so the UI optimistically hides it and it reappears on refresh. It can also throw a UNIQUE violation (500) on a second delete. The fix is to call deleteByAlias(alias) directly.
+Tests: deleting an existing alias makes a subsequent GET return 404; deleting an unknown alias returns 404; deleting twice returns 404 the second time.
 
 
 # NOT FIXED
@@ -12,8 +14,6 @@ NotFixed - leave it for now - Add to Readme
 
 
 #TODO
-[REQ] Delete bug. delete() inserts alias-deleted and then deletes that row. The original is never removed, so the UI optimistically hides it and it reappears on refresh. It can also throw a UNIQUE violation (500) on a second delete. The fix is to call deleteByAlias(alias) directly.
-Tests: deleting an existing alias makes a subsequent GET return 404; deleting an unknown alias returns 404; deleting twice returns 404 the second time.
 [REQ] Delete in dev mode. The Vite proxy only forwards /shorten and /urls, so DELETE /{alias} never reaches the API under npm run dev. This may be part of the "strange behaviour".
 [REQ] generateAlias. Use SecureRandom with base62 and length 7, as the existing constants suggest. On collision, retry a bounded number of times, then fail cleanly. ThreadLocalRandom is predictable, so don't use it; it's currently an unused import.
 Tests: output matches the alias regex and length; collisions trigger a retry (mock the repository or inject a RandomGenerator); exhausted retries produce a clear error.

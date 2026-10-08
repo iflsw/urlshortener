@@ -6,10 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,6 +20,8 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.CREATED;
 import static org.springframework.http.HttpStatus.FOUND;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
+import static org.springframework.http.HttpStatus.NO_CONTENT;
 
 @SpringBootTest(webEnvironment = RANDOM_PORT)
 @TestPropertySource(properties = {
@@ -100,5 +105,35 @@ class UrlsControllerIT {
 
         var redirect = restTemplate.getForEntity("/redir", String.class);
         assertThat(redirect.getHeaders().getLocation()).hasToString("https://target.com/");
+    }
+
+    @Test
+    void delete_ExistingAlias_Returns204AndAliasStopsRedirecting() {
+        assertThat(delete("redir").getStatusCode()).isEqualTo(NO_CONTENT);
+
+        assertThat(restTemplate.getForEntity("/redir", String.class).getStatusCode()).isEqualTo(NOT_FOUND);
+    }
+
+    @Test
+    void delete_ExistingAlias_RemovesItFromTheList() {
+        delete("redir");
+
+        var list = restTemplate.getForEntity("/urls", List.class);
+        assertThat(list.getBody()).isEmpty();
+    }
+
+    @Test
+    void delete_UnknownAlias_Returns404() {
+        assertThat(delete("missing").getStatusCode()).isEqualTo(NOT_FOUND);
+    }
+
+    @Test
+    void delete_Twice_SecondReturns404() {
+        assertThat(delete("redir").getStatusCode()).isEqualTo(NO_CONTENT);
+        assertThat(delete("redir").getStatusCode()).isEqualTo(NOT_FOUND);
+    }
+
+    private ResponseEntity<Void> delete(String alias) {
+        return restTemplate.exchange("/" + alias, HttpMethod.DELETE, null, Void.class);
     }
 }

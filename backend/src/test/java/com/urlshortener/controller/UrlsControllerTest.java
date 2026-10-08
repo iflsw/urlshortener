@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -113,5 +114,21 @@ class UrlsControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("The alias 'taken' is already taken."));
+    }
+
+    @Test
+    void delete_ExistingAlias_Returns204() throws Exception {
+        given(service.delete("gone")).willReturn(true);
+
+        mockMvc.perform(delete("/gone"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void delete_UnknownAlias_Returns404() throws Exception {
+        given(service.delete("missing")).willReturn(false);
+
+        mockMvc.perform(delete("/missing"))
+                .andExpect(status().isNotFound());
     }
 }

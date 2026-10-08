@@ -30,19 +30,6 @@ public class ShortenedUrlRepository {
                 + ")");
     }
 
-    public boolean existsByAlias(String alias) {
-        Integer count = jdbc.queryForObject(
-                "SELECT COUNT(1) FROM shortened_urls WHERE alias = ?",
-                Integer.class,
-                alias);
-        return count != null && count > 0;
-    }
-
-    public void save(String alias, String fullUrl, Instant createdAt) {
-        jdbc.update("INSERT INTO shortened_urls (alias, full_url, created_at) VALUES (?, ?, ?)",
-                alias, fullUrl, createdAt.toString());
-    }
-
     /**
      * Inserts the mapping only if the alias is not already taken.
      * <p>

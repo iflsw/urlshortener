@@ -63,4 +63,20 @@ We make the alias generator a component - this enforces separation of concerns a
 The method generateAlias in the service class cannot be static: it would prevent replacing with tesrt code - also we want to generate and save in the db in one transactional go. 
 The redirect call returns 302 instead of 301 (or 308) because in this app it is possible to delete an alias, so we dont want the redirect to be cached by a browser
 
+### alias deletion (bug fix)
+The initial code attempts tp mark a deleted allias by appending a suffix - the bug was that the row with the suffix was deleted, but not the original entry.
+AS a fix, we hard delete the entry. AS a result, it would potentially be possible for someone to recreate the same alias and redirect to a different url
+- A solution would be to soft delete, by adding a deleted column (in which case the creation and redirect would check that any existing alias would have this noumn null)
+- Another option would be to add some sort of security, only the owner of a url would be allowed to update/delete it.
+- another solid option would be to keep all used aliases in a separate table - first the alias is stored there in an atomic operation and only if successful is it added to the right table. delete just delete from the main tablr
+- Not considered 
+- alias prefix or suffix or magic url value - a separate column is cleaner than overloading existing values meaning
+- incremental alias (or part of alias) - makes the alias longer or more predictable - can still be taken by custom alias
+Add this to readme:
+Deletion - Deletion is permanent (hard delete). A deleted alias can be created again. Risk: links shared before deletion would then redirect to the new target (alias hijacking). 
+- Future options: a separate used alias registry, where previous aliases are added first (atomically) and never removed. note that the add wouldneed to be @transactional s that failure to add in the main table would revert the add in the registry. 
+- The regitry could be cached. 
+- consider adding @transactional to service methods as we may have more than one sql operation if we want to make the delete more clever. 
+- 
+
 
