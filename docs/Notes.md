@@ -62,6 +62,9 @@ the usuer generated alias will allow for hyphen (minus) character as well
 We make the alias generator a component - this enforces separation of concerns and allow simpler testing. 
 The method generateAlias in the service class cannot be static: it would prevent replacing with tesrt code - also we want to generate and save in the db in one transactional go. 
 The redirect call returns 302 instead of 301 (or 308) because in this app it is possible to delete an alias, so we dont want the redirect to be cached by a browser
+We replace the find and save repository methods with a simple saveIfAvailable
+saveIfAliasAvailable uses ON CONFLICT(alias) DO NOTHING, so a duplicate alias isn't an error: the insert is skipped, the row count is 0, the method returns false, and the service turns that into a clean "already taken" (400) or a retry. Real errors, such as a NOT NULL violation or a lock timeout, still throw, which is correct because those are genuine faults.
+sinceit iw a single atomic call, there is no need for transactional - we would add transactional if we add more steps, eg verification on another registry table or in a cache.
 
 ### alias deletion (bug fix)
 The initial code attempts tp mark a deleted allias by appending a suffix - the bug was that the row with the suffix was deleted, but not the original entry.
@@ -76,7 +79,6 @@ Add this to readme:
 Deletion - Deletion is permanent (hard delete). A deleted alias can be created again. Risk: links shared before deletion would then redirect to the new target (alias hijacking). 
 - Future options: a separate used alias registry, where previous aliases are added first (atomically) and never removed. note that the add wouldneed to be @transactional s that failure to add in the main table would revert the add in the registry. 
 - The regitry could be cached. 
-- consider adding @transactional to service methods as we may have more than one sql operation if we want to make the delete more clever. 
-- 
+- consider adding @transactional to service methods if we have more than one sql operation eg if we want to make the delete more clever. 
 
 

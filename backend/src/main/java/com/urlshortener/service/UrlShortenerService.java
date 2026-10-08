@@ -13,12 +13,24 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 
 @Service
 public class UrlShortenerService {
     private static final Logger log = LoggerFactory.getLogger(UrlShortenerService.class);
     static final int MAX_ALIAS_ATTEMPTS = 5;
+
+    /**
+     * ASCII letters, digits and hyphens only, 2-64 characters. Deliberately not Character.isLetterOrDigit, which accepts any
+     * Unicode letter or digit (e.g. "café", Arabic-Indic digits, full-width letters).
+     */
+    private static final Pattern ALIAS_PATTERN = Pattern.compile("[A-Za-z0-9-]{2,64}");
+
+    /** Paths used by API endpoints: an alias with one of these names could never redirect. */
+    private static final Set<String> RESERVED_ALIASES = Set.of("urls", "shorten");
+
     private final ShortenedUrlRepository repository;
     private final AliasGenerator aliasGenerator;
 
@@ -40,6 +52,9 @@ public class UrlShortenerService {
     private String saveWithCustomAlias(String alias, String fullUrl) {
         if (!isValidAlias(alias)) {
             throw new IllegalArgumentException("Alias may only contain letters, numbers, and hyphens (2–64 characters).");
+        }
+        if (RESERVED_ALIASES.contains(alias)) {
+            throw new IllegalArgumentException("The alias '" + alias + "' is reserved.");
         }
 
         // Atomic: the UNIQUE constraint decides, so two concurrent requests can never both claim
@@ -80,10 +95,8 @@ public class UrlShortenerService {
     }
 
     private static boolean isValidAlias(String alias) {
-        if (alias == null || alias.length() < 2 || alias.length() > 64) {
-            return false;
-        }
-        return alias.chars().allMatch(c -> Character.isLetterOrDigit(c) || c == '-');
+        // matches() requires the whole string to match, so no ^/$ anchors are needed.
+        return alias != null && ALIAS_PATTERN.matcher(alias).matches();
     }
 
     private static String normalizeUrl(String fullUrl) {

@@ -5,6 +5,8 @@ import com.urlshortener.model.ShortenUrlResponse;
 import com.urlshortener.repository.ShortenedUrlRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -147,6 +149,61 @@ public class UrlShortenerServiceTest {
         service.delete("gone");
 
         assertEquals("https://other.com/", service.getFullUrl("kept"));
+    }
+
+    // ---- custom alias validation ----
+
+    // Annotation values must be compile-time constants, so these are literals rather than "a".repeat(n).
+    private static final String ALIAS_64 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private static final String ALIAS_65 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private static final String INVALID_ALIAS_MESSAGE =
+            "Alias may only contain letters, numbers, and hyphens (2–64 characters).";
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ab", "my-alias", "ABC123", "a-b-c", "0-9", ALIAS_64})
+    void shorten_ValidCustomAlias_IsAccepted(String alias) {
+        var response = service.shorten(request("https://example.com", alias), BASE_URL);
+
+        assertEquals(alias, response.getAlias());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "a",            // too short
+            ALIAS_65,       // too long
+            "café",         // non-ASCII letter
+            "١٢٣",          // Arabic-Indic digits
+            "ａｂ",          // full-width letters
+            "my_alias",     // underscore
+            "my alias",     // inner space
+            "my.alias",     // dot (would also bypass the nginx alias route)
+            "a/b",          // path separator
+            "a\nb"         // control character (surrounding whitespace is trimmed, so test an inner one)
+    })
+    void shorten_InvalidCustomAlias_ThrowsAndSavesNothing(String alias) {
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.shorten(request("https://example.com", alias), BASE_URL));
+
+        assertEquals(INVALID_ALIAS_MESSAGE, ex.getMessage());
+        assertTrue(service.getAll(BASE_URL).isEmpty());
+    }
+
+    @Test
+    void shorten_CustomAliasWithSurroundingSpaces_IsTrimmed() {
+        var response = service.shorten(request("https://example.com", "  my-alias  "), BASE_URL);
+
+        assertEquals("my-alias", response.getAlias());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"urls", "shorten"})
+    void shorten_ReservedCustomAlias_ThrowsAndSavesNothing(String alias) {
+        // These paths belong to API endpoints, so such an alias could never redirect.
+        var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.shorten(request("https://example.com", alias), BASE_URL));
+
+        assertEquals("The alias '" + alias + "' is reserved.", ex.getMessage());
+        assertTrue(service.getAll(BASE_URL).isEmpty());
     }
 
     private static ShortenUrlRequest request(String fullUrl, String customAlias) {

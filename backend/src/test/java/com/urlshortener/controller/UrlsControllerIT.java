@@ -136,4 +136,13 @@ class UrlsControllerIT {
     private ResponseEntity<Void> delete(String alias) {
         return restTemplate.exchange("/" + alias, HttpMethod.DELETE, null, Void.class);
     }
+
+    @Test
+    void shorten_NonAsciiCustomAlias_Returns400WithError() {
+        var response = restTemplate.postForEntity("/shorten",
+                Map.of("fullUrl", "https://example.com", "customAlias", "café"), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(BAD_REQUEST);
+        assertThat(response.getBody()).containsKey("error");
+    }
 }
