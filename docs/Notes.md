@@ -85,7 +85,7 @@ Walk all pages (needs jq):
     cursor=""; while :; do page=$(curl -s "localhost:3000/urls?size=2${cursor:+&cursor=$cursor}"); echo "$page" | jq -r '.items[].alias'; cursor=$(echo "$page" | jq -r '.nextCursor // empty'); [ -z "$cursor" ] && break; done
 
 #### populate a number of entries using shorten
-for i in 1 2 3 4 5; do
+for i in {1..45}; do
 curl -s -o /dev/null -w "%{http_code} p$i\n" -X POST localhost:3000/shorten \
 -H 'Content-Type: application/json' \
 -d "{\"fullUrl\":\"https://example.com/$i\",\"customAlias\":\"p$i\"}"

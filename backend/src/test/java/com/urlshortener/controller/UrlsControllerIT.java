@@ -164,16 +164,33 @@ class UrlsControllerIT {
         create("p1");
         create("p2");
         create("p3");
-        var first = getPage(null, 2);
-
+        var first = getPage(null, 2); //will include p3 and p2
         create("p4");   // newer than everything: must not appear on later pages or shift them
         var second = getPage((String) first.get("nextCursor"), 2);
-        var third = getPage((String) second.get("nextCursor"), 2);
 
         assertThat(aliases(first)).containsExactly("p3", "p2");
         assertThat(aliases(second)).containsExactly("p1", "redir");
-        assertThat(aliases(third)).isEmpty();
-        assertThat(third.get("nextCursor")).isNull();
+        assertThat(second.get("nextCursor")).isNull();   // last page: p4 never appears, nothing is repeated
+    }
+
+    @Test
+    void list_NewUrlAddedAtTheTop() {
+        create("p1");
+        create("p2");
+        create("p3");
+        var first = getPage(null, 2); //will include p3 and p2
+        var second = getPage((String) first.get("nextCursor"), 2);
+        create("p4");   // newer than everything: must not appear on later pages or shift them
+        var firstAgain = getPage(null, 2); //will include p3 and p2
+        var secondAgain = getPage((String) firstAgain.get("nextCursor"), 2);
+
+        assertThat(aliases(first)).containsExactly("p3", "p2");
+        assertThat(aliases(getPage((String) first.get("nextCursor"), 2))).containsExactly("p1", "redir");
+        assertThat(second.get("nextCursor")).isNull();
+
+        assertThat(aliases(firstAgain)).containsExactly("p4", "p3");
+        assertThat(aliases(secondAgain)).containsExactly("p2", "p1");
+        assertThat(secondAgain.get("nextCursor")).isNotNull();
     }
 
     @Test
