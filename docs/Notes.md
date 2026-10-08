@@ -29,6 +29,7 @@ If the API behaves like old code after a change: rebuild with --build, and check
 Persistence:
 docker compose down && docker compose up -d keeps the data; docker compose down -v wipes it.
 
+
 ### Where the data lives
 - The database is on the named volume api-data (urlshortener_api-data), mounted at /data in the api container.
 - It survives rebuilds, restarts and `docker compose down`. Only `docker compose down -v` (or `docker volume rm`) wipes it.
@@ -57,9 +58,11 @@ UI: open http://localhost:3000 (the URL list UI is still a stub).
 API: port 3000 goes through nginx; port 8080 is the API directly.
 
 #### Shorten:
-curl -i -X POST localhost:3000/shorten -H 'Content-Type: application/json' -d '{"fullUrl":"https://example.com"}'
+curl -i -X POST localhost:3000/shorten -H 'Content-Type: application/json' -d '{"fullUrl":"https://example.com"}'  
 -> 201, Location: http://localhost:3000/<7 chars>, JSON body { shortUrl, alias, fullUrl }
+
 With "customAlias":"my-alias" -> 201; taken, invalid (e.g. "café") or reserved ("urls") -> 400 { "error": ... }
+curl -i -X POST localhost:3000/shorten -H 'Content-Type: application/json' -d '{"fullUrl":"https://example.com","customAlias":"my-alias"}'
 
 #### Redirect: 
 curl -i localhost:3000/gh -> 302 with Location: https://github.com/ (curl does not follow it; add -L to follow).
@@ -70,12 +73,12 @@ Not found: curl -i localhost:3000/nope -> 404
 curl -i -X DELETE localhost:3000/gh -> 204; then GET /gh -> 404; deleting again -> 404.
 
 #### List (cursor paging, newest first):
-curl -i localhost:8080/url
-curl -i localhost:3000/urls
-curl -s localhost:3000/urls      # shortUrl with alias xyz should be http://localhost:3000/xyz
-
+curl -i localhost:8080/urls
+curl -s localhost:3000/urls   # shortUrl with alias xyz should be http://localhost:3000/xyz
 curl -s 'localhost:3000/urls?size=2'     -> { "items": [...], "nextCursor": "..." }  
 curl -s 'localhost:3000/urls?size=2&cursor=<cursor>'  -> next page; nextCursor is null on the last page  
+
+list with cursor (beautified): curl -s 'localhost:3000/urls?size=2&cursor=PASTE_CURSOR_HERE' | python3 -m json.tool
 
 size outside 1-100, size=abc, or a malformed cursor   -> 400 { "error": ... }  
 Walk all pages (needs jq):
@@ -87,15 +90,6 @@ curl -s -o /dev/null -w "%{http_code} p$i\n" -X POST localhost:3000/shorten \
 -H 'Content-Type: application/json' \
 -d "{\"fullUrl\":\"https://example.com/$i\",\"customAlias\":\"p$i\"}"
 done
-
-#### misc quick tests
-- Redirect: curl -i localhost:3000/gh should return 302 with Location: https://github.com/  
-- Not found: curl -i localhost:3000/nope should return 404.  
-- Delete: curl -i -X DELETE localhost:3000/gh returns 204, but GET /urls still lists gh. (known delete bug: the service inserts and deletes gh-deleted instead of gh)  
-- Shorten: curl -i -X POST localhost:3000/shorten -H 'Content-Type: application/json' -d '{"fullUrl":"https://example.com"}' returns 200 with an empty body, and nothing is saved. (known bug: The controller is a stub)  
-- Persistence: run docker compose down && docker compose up -d, and the seeded row should still be there. docker compose down -v wipes it.  
-- list with cursor (beautified): curl -s 'localhost:3000/urls?size=2' | python3 -m json.tool  
-- list with cursor (beautified): curl -s 'localhost:3000/urls?size=2&cursor=PASTE_CURSOR_HERE' | python3 -m json.tool  
 
 #### decode cursor
 c=$(curl -s 'localhost:3000/urls?size=2' | jq -r .nextCursor)
