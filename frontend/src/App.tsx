@@ -2,10 +2,29 @@ import { useUrlShortener } from './hooks/useUrlShortener';
 import { ShortenForm } from './components/ShortenForm';
 import { ResultBanner } from './components/ResultBanner';
 import { UrlTable } from './components/UrlTable';
+import { Pagination } from './components/Pagination';
 
 export default function App() {
-  const { urls, loading, error, lastCreated, shorten, deleteUrl, clearLastCreated } =
-    useUrlShortener();
+  const {
+    urls,
+    page,
+    hasPrev,
+    hasNext,
+    loading,
+    error,
+    lastCreated,
+    shorten,
+    deleteUrl,
+    nextPage,
+    prevPage,
+    clearLastCreated,
+  } = useUrlShortener();
+
+  const confirmAndDelete = (alias: string) => {
+    if (window.confirm(`Delete the short URL "${alias}"? Links using it will stop working.`)) {
+      void deleteUrl(alias);
+    }
+  };
 
   return (
     <div className="app">
@@ -39,18 +58,26 @@ export default function App() {
 
         <section className="card" aria-labelledby="list-heading">
           <h2 id="list-heading" className="card__title">
-            All shortened URLs
-            {urls.length > 0 && (
-              <span className="badge">{urls.length}</span>
-            )}
+            Shortened URLs
           </h2>
 
-          {loading ? (
+          {loading && urls.length === 0 ? (
             <div className="loading" aria-live="polite" aria-busy="true">
               Loading…
             </div>
           ) : (
-            <UrlTable urls={urls} onDelete={deleteUrl} />
+            // Keep showing the current rows while the next page loads, to avoid flicker.
+            <div aria-busy={loading}>
+              <UrlTable urls={urls} onDelete={confirmAndDelete} disabled={loading} />
+              <Pagination
+                page={page}
+                hasPrev={hasPrev}
+                hasNext={hasNext}
+                onPrev={prevPage}
+                onNext={nextPage}
+                disabled={loading}
+              />
+            </div>
           )}
         </section>
       </main>

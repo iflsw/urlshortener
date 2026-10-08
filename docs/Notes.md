@@ -54,7 +54,7 @@ docker compose cp api:/data/urlshortener.db ~/docker-urlshortener.db
 
 ## Exercise the UI and APIs
 Swagger: http://localhost:8080/swagger-ui/index.html
-UI: open http://localhost:3000 (the URL list UI is still a stub).
+UI: open http://localhost:3000. The list shows 10 URLs per page, newest first, with Previous/Next.
 API: port 3000 goes through nginx; port 8080 is the API directly.
 
 #### Shorten:
@@ -146,13 +146,58 @@ Deletion - Deletion is permanent (hard delete). A deleted alias can be created a
 
 ### Sort
 created_at is written as fixed-width UTC milliseconds (yyyy-MM-ddTHH:mm:ss.SSSZ) so text order equals time order; lists are ordered created_at DESC, id DESC (id breaks ties).
-Rows written before this change keep the old Instant.toString() format: correct across seconds; within the same second they fall back to id order.
+Rows written before this change keep the old Instant.toString() format: correct across seconds, but within the same second the order is not guaranteed.
+Instant.toString() writes 0, 3, 6 or 9 fraction digits, so text order can invert ("...:00.123456Z" sorts before "...:00.123Z"; "...:00.5Z" before "...:00Z").
+Paging stays consistent (the cursor compares the stored text), only the order within that second can be wrong. A one-off UPDATE rewriting old rows to the fixed-width format would fix it.
 
 ### Paging (cursor / keyset)
 GET /urls?size=&cursor= returns { items, nextCursor }; newest first; size 1-100, default 20; nextCursor is null on the last page.
 The cursor is base64url of "created_at|id" of the last item on the page. The next query is WHERE created_at < ? OR (created_at = ? AND id < ?), so links created or deleted between requests cause no duplicates or gaps (unlike LIMIT/OFFSET). One extra row is fetched to detect the last page without a COUNT.
 The cursor is opaque but not secret: decoding or tampering only moves the position within a list the client can already read.
 Trade-offs: no "jump to page N" and no total count. An index on (created_at, id) supports the query.
-Envelope chosen over a header (X-Next-Cursor): cleaner contract; it breaks the current frontend list, which is updated in the frontend phase.
+Envelope chosen over a header (X-Next-Cursor): cleaner contract; it changed the list response, and the frontend was updated to match (see Frontend below).
+A cursor stays valid when the row it points at is deleted: it holds the values (created_at, id), not a reference to the row, so the query returns the next older existing row.
 
+Why cursor rather than offset (LIMIT/OFFSET):
+- Delete is a core action and the list is newest-first, which are exactly the cases where offset skips a row (after a delete) or repeats one (after an insert). Cursor never skips; at worst one row repeats when going back.
+- Constant cost at any depth (index lookup instead of reading and discarding OFFSET rows).
+- Cost: no total, no "of Y", no jump to an unvisited page, no ?page=N deep links, and more logic in the client.
+At this exercise's scale offset would also have been acceptable, and is the simpler choice if page numbers or totals matter more than consistency during edits.
+The README does not require a total ("Add paging for retrieval of the URLs"), so none was added: it saves a COUNT(*) per request.
 
+### Frontend: URL list and paging
+The URL list (UrlTable) replaces the stub; the paging UI is Previous/Next with "Page X" (no "of Y", as the API has no total).
+GET /urls is called with size=10 explicitly, so the UI does not depend on the backend default (20).
+
+Previous works with forward-only cursors because the client keeps a stack of the cursors it used; the page number is the stack depth.
+- Next: push the nextCursor of the page currently shown (always the latest one, never a stored one, so moving forward cannot skip rows), then fetch.
+- Previous: pop, then fetch again (fresh data, not a cached page).
+- Delete: refetch the current page with the same cursor, so a row from the next page moves up. If the page comes back empty, step back one page.
+  A failed delete (404, e.g. already deleted elsewhere) shows the error and still refreshes, as the list was stale.
+- Shorten: back to page 1, where the new URL is (newest first).
+- 400 on a cursor ("Invalid cursor."): back to page 1 with the error shown.
+- Every stack change aborts the previous request (AbortController), so a slow response cannot overwrite a newer page.
+- Buttons are disabled while a page loads; the current rows stay visible meanwhile (no flicker).
+- Delete asks for confirmation (window.confirm in App, so UrlTable stays a pure component).
+- The per-page count badge was removed: with paging it would only count the current page.
+
+What a user sees after deletes (example: 10 per page, on page 3, stack [null, c1, c2]):
+- Delete on the current page: the page is refetched; Previous then shows page 2 unchanged.
+- A row deleted elsewhere on page 2: Previous shows rows 11-20 including old row 21, which was already on page 3, so one row repeats. Nothing is skipped.
+- The row a cursor points at is deleted (e.g. c1 = row 10): Previous still shows rows 11-20; going back to page 1 then shows rows 1-9 plus row 11, so row 11 repeats.
+- Next always continues from the latest page, so the pages realign.
+Limitations: the stack lives in React state, so a browser refresh returns to page 1 and the browser Back button leaves the app rather than going to the previous page.
+
+### Frontend security
+- Any URL rendered as a link must be http(s) (isHttpUrl); otherwise it is shown as plain text. React does not block javascript: hrefs, and stored data can predate server-side validation.
+- External links use target="_blank" with rel="noopener noreferrer", so the opened page cannot reach window.opener.
+- No dangerouslySetInnerHTML; all API text is rendered as text.
+- The list response is checked before use (must be { items: [], nextCursor: string | null }).
+- API errors carry the HTTP status (ApiRequestError), so the UI can react to specific cases such as a rejected cursor.
+
+### Frontend tests
+cd frontend && npm ci && npm test        (npm run test:watch to re-run on change)
+Expected: 48 tests passing.
+Tests were written first for: UrlTable (table semantics, labelled delete, safe links), Pagination, the paging hook (stack, delete, shorten, invalid cursor, stale responses), the api service, isHttpUrl.
+The existing ShortenForm tests print "not wrapped in act(...)" warnings; they pass, and are fixed with userEvent.setup() (see BugsToFix.md).
+Under npm run dev, delete and redirect need the Vite proxy fix (see BugsToFix.md); through Docker (port 3000) nginx already proxies them.
