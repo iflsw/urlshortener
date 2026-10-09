@@ -1,5 +1,6 @@
 // Adds the Vitest `test` block to Vite's config type. Without it, type-checking this file
 // (tsconfig.node.json, e.g. in the IDE) fails with TS2769 on `test`.
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 

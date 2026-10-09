@@ -4,10 +4,15 @@ import { isHttpUrl } from '../utils/safeUrl';
 interface ShortenFormProps {
   /** Resolves true on success. The form is cleared only then, so a rejected request keeps the input. */
   onSubmit: (fullUrl: string, customAlias?: string) => Promise<boolean>;
+  /**
+   * Called on every press of Shorten, so that the caller can drop the previous
+   * result (e.g. the success banner) even when this attempt fails validation.
+   */
+  onSubmitAttempt?: () => void;
   disabled?: boolean;
 }
 
-export function ShortenForm({ onSubmit, disabled }: ShortenFormProps) {
+export function ShortenForm({ onSubmit, onSubmitAttempt, disabled }: ShortenFormProps) {
   const [fullUrl, setFullUrl] = useState('');
   const [customAlias, setCustomAlias] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -27,6 +32,7 @@ export function ShortenForm({ onSubmit, disabled }: ShortenFormProps) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    onSubmitAttempt?.();
     const err = validate();
     if (err) {
       setValidationError(err);

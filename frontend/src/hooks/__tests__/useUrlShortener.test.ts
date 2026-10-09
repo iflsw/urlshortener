@@ -166,3 +166,42 @@ describe('useUrlShortener paging', () => {
     expect(result.current.page).toBe(1);
   });
 });
+
+describe('useUrlShortener shorten result', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('resolves true when the URL was created', async () => {
+    const { result } = await renderOnPage1();
+    shorten.mockResolvedValueOnce(item('new'));
+    listPage.mockResolvedValueOnce(page(['new', 'a'], 'c1'));
+
+    let created: boolean | undefined;
+    await act(async () => {
+      created = await result.current.shorten('https://example.com/new');
+    });
+
+    expect(created).toBe(true);
+  });
+
+  it('resolves false, exposes the error and clears the previous success when the API rejects', async () => {
+    const { result } = await renderOnPage1();
+    shorten.mockResolvedValueOnce(item('first'));
+    listPage.mockResolvedValueOnce(page(['first', 'a'], 'c1'));
+    await act(async () => {
+      await result.current.shorten('https://example.com/first');
+    });
+    expect(result.current.lastCreated?.alias).toBe('first');
+
+    shorten.mockRejectedValueOnce(new ApiRequestError("The alias 'taken' is already taken.", 400));
+    let created: boolean | undefined;
+    await act(async () => {
+      created = await result.current.shorten('https://example.com', 'taken');
+    });
+
+    expect(created).toBe(false);
+    expect(result.current.error).toBe("The alias 'taken' is already taken.");
+    expect(result.current.lastCreated).toBeNull();
+  });
+});

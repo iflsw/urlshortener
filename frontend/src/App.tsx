@@ -43,7 +43,7 @@ export default function App() {
           <h2 id="shorten-heading" className="card__title">
             Shorten a URL
           </h2>
-          <ShortenForm onSubmit={shorten} />
+          <ShortenForm onSubmit={shorten} onSubmitAttempt={clearLastCreated} />
         </section>
 
         {lastCreated && (
