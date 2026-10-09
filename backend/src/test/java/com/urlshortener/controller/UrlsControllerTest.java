@@ -1,5 +1,6 @@
 package com.urlshortener.controller;
 
+import com.urlshortener.exception.AliasGenerationException;
 import com.urlshortener.model.ShortenUrlRequest;
 import com.urlshortener.model.ShortenUrlResponse;
 import com.urlshortener.model.UrlListItem;
@@ -16,6 +17,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,6 +28,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -190,5 +194,52 @@ class UrlsControllerTest {
         mockMvc.perform(get("/urls").param("cursor", "bad"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Invalid cursor."));
+    }
+
+    @Test
+    void shorten_AliasGenerationExhausted_Returns503WithError() throws Exception {
+        given(service.shorten(any(ShortenUrlRequest.class), any())).willThrow(new AliasGenerationException(5));
+
+        mockMvc.perform(post("/shorten")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fullUrl": "https://example.com"}
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("Could not generate a unique alias. Please try again."));
+    }
+
+    @Test
+    void shorten_MalformedJson_Returns400WithErrorAndSkipsService() throws Exception {
+        String malformedJson = "{";
+        mockMvc.perform(post("/shorten")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(malformedJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Malformed JSON request."));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void shorten_UnexpectedException_Returns500WithGenericErrorAndNoInternals() throws Exception {
+        given(service.shorten(any(ShortenUrlRequest.class), any()))
+                .willThrow(new RuntimeException("connection to jdbc:sqlite:/data/secret.db failed"));
+
+        mockMvc.perform(post("/shorten")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fullUrl": "https://example.com"}
+                                """))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.error").value("Internal server error."))
+                .andExpect(content().string(not(containsString("secret"))));
+    }
+
+    @Test
+    void list_UnsupportedMethod_StillHandledBySpring() throws Exception {
+        // Guard: the catch-all handler must not swallow Spring's own MVC errors (405 here).
+        mockMvc.perform(post("/urls"))
+                .andExpect(status().isMethodNotAllowed());
     }
 }
