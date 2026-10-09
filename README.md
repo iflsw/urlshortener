@@ -282,7 +282,7 @@ See also  [Tests](#tests).
 
 ---
 
-## Security concerns
+## Security
 
 **Implemented**
 
