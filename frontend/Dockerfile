@@ -2,8 +2,9 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+# Copy the lockfile too and use npm ci: installs exactly the locked versions (reproducible builds).
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
 RUN npm run build

@@ -1,0 +1,36 @@
+# Snip – URL Shortener
+# Build:  docker compose build
+# Run:    docker compose up -d        (add --build after code changes)
+# Stop:   docker compose down         (add -v to also wipe the database volume)
+
+name: urlshortener
+
+services:
+  # NOTE: the service name MUST stay "api" – frontend/nginx.conf proxies to http://api:8080
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: urlshortener-api:local
+    environment:
+      DATABASE_PATH: /data/urlshortener.db
+      SERVER_PORT: "8080"
+    ports:
+      - "8080:8080"   # direct API access for testing (curl); can be removed later
+    volumes:
+      - api-data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: urlshortener-frontend:local
+    ports:
+      - "3000:80"     # UI + proxied API at http://localhost:3000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  api-data:

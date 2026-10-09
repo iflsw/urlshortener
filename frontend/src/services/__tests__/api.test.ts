@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { api } from '../api';
+import { api, ApiRequestError } from '../api';
 
 describe('api service', () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('shorten sends POST to /shorten with correct body', async () => {
     const mockResponse = { alias: 'abc', fullUrl: 'https://ex.com', shortUrl: 'http://host/abc' };
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 201,
       json: async () => mockResponse,
-    } as Response);
+    } as Response));
 
     const result = await api.shorten({ fullUrl: 'https://ex.com', customAlias: 'abc' });
 
@@ -25,34 +25,83 @@ describe('api service', () => {
   });
 
   it('shorten throws with error message from API on failure', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
       json: async () => ({ error: 'Alias already taken.' }),
-    } as Response);
+    } as Response));
 
     await expect(api.shorten({ fullUrl: 'https://ex.com', customAlias: 'taken' }))
       .rejects.toThrow('Alias already taken.');
   });
 
-  it('listAll sends GET to /urls', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+  it('listPage requests the first page without a cursor', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: [], nextCursor: null }),
+    } as Response));
+
+    const page = await api.listPage({ size: 10 });
+
+    expect(fetch).toHaveBeenCalledWith('/urls?size=10', expect.anything());
+    expect(page).toEqual({ items: [], nextCursor: null });
+  });
+
+  it('listPage passes the cursor, URL-encoded', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: [], nextCursor: null }),
+    } as Response));
+
+    await api.listPage({ size: 10, cursor: 'a+b/c=' });
+
+    expect(fetch).toHaveBeenCalledWith('/urls?size=10&cursor=a%2Bb%2Fc%3D', expect.anything());
+  });
+
+  it('listPage forwards the abort signal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: [], nextCursor: null }),
+    } as Response));
+    const controller = new AbortController();
+
+    await api.listPage({ size: 10 }, controller.signal);
+
+    expect(fetch).toHaveBeenCalledWith(expect.any(String), { signal: controller.signal });
+  });
+
+  it('listPage rejects a response that is not a page envelope', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => [],
-    } as Response);
+    } as Response));
 
-    await api.listAll();
+    await expect(api.listPage({ size: 10 })).rejects.toThrow(/unexpected response/i);
+  });
 
-    expect(fetch).toHaveBeenCalledWith('/urls');
+  it('errors carry the HTTP status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'Invalid cursor.' }),
+    } as Response));
+
+    const error = await api.listPage({ size: 10, cursor: 'bad' }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({ status: 400, message: 'Invalid cursor.' });
   });
 
   it('delete sends DELETE to /{alias}', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 204,
       json: async () => undefined,
-    } as Response);
+    } as Response));
 
     await api.delete('my-alias');
 
@@ -60,11 +109,11 @@ describe('api service', () => {
   });
 
   it('delete throws on 404', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
       json: async () => ({ error: "No URL found for alias 'ghost'." }),
-    } as Response);
+    } as Response));
 
     await expect(api.delete('ghost'))
       .rejects.toThrow("No URL found for alias 'ghost'.");

@@ -1,11 +1,18 @@
 import { useState, type FormEvent } from 'react';
+import { isHttpUrl } from '../utils/safeUrl';
 
 interface ShortenFormProps {
-  onSubmit: (fullUrl: string, customAlias?: string) => Promise<void>;
+  /** Resolves true on success. The form is cleared only then, so a rejected request keeps the input. */
+  onSubmit: (fullUrl: string, customAlias?: string) => Promise<boolean>;
+  /**
+   * Called on every press of Shorten, so that the caller can drop the previous
+   * result (e.g. the success banner) even when this attempt fails validation.
+   */
+  onSubmitAttempt?: () => void;
   disabled?: boolean;
 }
 
-export function ShortenForm({ onSubmit, disabled }: ShortenFormProps) {
+export function ShortenForm({ onSubmit, onSubmitAttempt, disabled }: ShortenFormProps) {
   const [fullUrl, setFullUrl] = useState('');
   const [customAlias, setCustomAlias] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -13,9 +20,8 @@ export function ShortenForm({ onSubmit, disabled }: ShortenFormProps) {
 
   const validate = (): string | null => {
     if (!fullUrl.trim()) return 'URL is required.';
-    try {
-      new URL(fullUrl);
-    } catch {
+    // http(s) only, like the backend: new URL() alone also accepts javascript:, data:, ftp: and mailto:.
+    if (!isHttpUrl(fullUrl.trim())) {
       return 'Enter a valid URL (e.g. https://example.com).';
     }
     if (customAlias && !/^[a-zA-Z0-9-]{2,64}$/.test(customAlias)) {
@@ -26,6 +32,7 @@ export function ShortenForm({ onSubmit, disabled }: ShortenFormProps) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    onSubmitAttempt?.();
     const err = validate();
     if (err) {
       setValidationError(err);
@@ -34,9 +41,13 @@ export function ShortenForm({ onSubmit, disabled }: ShortenFormProps) {
     setValidationError(null);
     setSubmitting(true);
     try {
-      await onSubmit(fullUrl.trim(), customAlias.trim() || undefined);
-      setFullUrl('');
-      setCustomAlias('');
+      const created = await onSubmit(fullUrl.trim(), customAlias.trim() || undefined);
+      if (created) {
+        setFullUrl('');
+        setCustomAlias('');
+      }
+    } catch {
+      // Treat an unexpected rejection like a failed submission: keep the input. The caller reports errors.
     } finally {
       setSubmitting(false);
     }
