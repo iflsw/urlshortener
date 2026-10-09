@@ -16,7 +16,8 @@ interface UseUrlShortenerReturn {
   loading: boolean;
   error: string | null;
   lastCreated: ShortenUrlResponse | null;
-  shorten: (fullUrl: string, customAlias?: string) => Promise<void>;
+  /** Resolves true if the URL was created; false if it failed (the message is in `error`). */
+  shorten: (fullUrl: string, customAlias?: string) => Promise<boolean>;
   deleteUrl: (alias: string) => Promise<void>;
   nextPage: () => void;
   prevPage: () => void;
@@ -93,7 +94,7 @@ export function useUrlShortener(): UseUrlShortenerReturn {
   }, []);
 
   const shorten = useCallback(
-    async (fullUrl: string, customAlias?: string) => {
+    async (fullUrl: string, customAlias?: string): Promise<boolean> => {
       setError(null);
       setLastCreated(null);
       try {
@@ -101,8 +102,10 @@ export function useUrlShortener(): UseUrlShortenerReturn {
         setLastCreated(result);
         // The new URL is the newest, so it is on page 1.
         resetToFirstPage();
+        return true;
       } catch (e) {
         setError(messageOf(e, 'Failed to shorten URL.'));
+        return false;
       }
     },
     [resetToFirstPage],
